@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#070707"/>
+  <path d="M96 334 190 112h132l94 222h-82l-18-48H196l-18 48H96Zm124-112h72l-36-94-36 94Z" fill="#e4ff33"/>
+  <text x="256" y="416" fill="#fff" font-family="Arial, sans-serif" font-size="58" font-weight="700" text-anchor="middle">DRIVE</text>
+</svg>
