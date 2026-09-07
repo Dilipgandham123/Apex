@@ -1,29 +1,30 @@
 {
-  "name": "hyd-driving-academy-clone",
+  "name": "hyd-driving-academy",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@11.6.0",
+  "workspaces": ["apps/*", "packages/*"],
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
-  },
-  "dependencies": {
-    "@phosphor-icons/react": "^2.1.10",
-    "motion": "^13.1.1",
-    "next": "16.3.3",
-    "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "dev": "turbo run dev --parallel",
+    "dev:web": "npm run dev --workspace=@hyd/web",
+    "dev:api": "npm run dev --workspace=@hyd/api",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "check": "npm run lint && npm run typecheck && npm run test && npm run verify:pwa && npm run build",
+    "db:generate": "npm run db:generate --workspace=@hyd/database",
+    "db:validate": "npm run db:validate --workspace=@hyd/database",
+    "db:migrate": "npm run db:migrate --workspace=@hyd/database",
+    "verify:pwa": "node scripts/verify-pwa.mjs",
+    "backup:database": "node scripts/database-backup.mjs",
+    "restore:database": "node scripts/database-restore.mjs",
+    "validate:migration": "node scripts/validate-notebook-import.mjs",
+    "seed:madhapur": "npm run seed:madhapur --workspace=@hyd/api"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.3.3",
-    "playwright": "^1.62.1",
-    "tailwindcss": "^4",
-    "typescript": "^5"
-  }
+    "turbo": "^2.5.6",
+    "typescript": "^5.9.2"
+  },
+  "engines": { "node": ">=20.19.0" }
 }

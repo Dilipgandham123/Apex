@@ -1,0 +1,677 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model DrivingSchool {
+  id                   String                 @id @default(cuid())
+  name                 String
+  slug                 String                 @unique
+  memberships          SchoolMembership[]
+  auditLogs            AuditLog[]
+  courses              Course[]
+  customers            CustomerProfile[]
+  staff                StaffProfile[]
+  vehicles             Vehicle[]
+  lessons              Lesson[]
+  kilometreEntries     KilometreLedgerEntry[]
+  deadlineExtensions   DeadlineExtension[]
+  payments             Payment[]
+  paymentWebhookEvents PaymentWebhookEvent[]
+  complaints           Complaint[]
+  enquiries            PublicEnquiry[]
+  notifications        Notification[]
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+}
+
+model PublicEnquiry {
+  id            String        @id @default(cuid())
+  schoolId      String
+  name          String
+  phone         String
+  course        String
+  preferredSlot String
+  notes         String?
+  status        EnquiryStatus @default(NEW)
+  source        String        @default("WEBSITE_WHATSAPP")
+  ipAddress     String?
+  userAgent     String?
+  school        DrivingSchool @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([schoolId, status, createdAt])
+  @@index([schoolId, phone, createdAt])
+}
+
+model Notification {
+  id                String                @id @default(cuid())
+  schoolId          String?
+  userId            String?
+  eventType         NotificationEvent
+  channel           NotificationChannel
+  recipient         String
+  payloadEncrypted  String
+  idempotencyKey    String                @unique
+  status            NotificationStatus    @default(PENDING)
+  attemptCount      Int                   @default(0)
+  nextAttemptAt     DateTime              @default(now())
+  providerMessageId String?
+  lastError         String?
+  sentAt            DateTime?
+  school            DrivingSchool?        @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  attempts          NotificationAttempt[]
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([status, nextAttemptAt])
+  @@index([schoolId, createdAt])
+  @@index([userId, createdAt])
+}
+
+model NotificationAttempt {
+  id             String       @id @default(cuid())
+  notificationId String
+  attemptNumber  Int
+  success        Boolean
+  providerResult Json?
+  error          String?
+  notification   Notification @relation(fields: [notificationId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+
+  @@unique([notificationId, attemptNumber])
+  @@index([createdAt])
+}
+
+enum NotificationEvent {
+  OTP
+  PAYMENT_CONFIRMED
+  PAYMENT_REMINDER
+  DEADLINE_WARNING
+  COURSE_COMPLETED
+  COMPLAINT_REPLY
+}
+
+enum NotificationChannel {
+  WHATSAPP
+  EMAIL
+}
+
+enum NotificationStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+enum EnquiryStatus {
+  NEW
+  CONTACTED
+  ENROLLED
+  CLOSED
+}
+
+model User {
+  id                   String                 @id @default(cuid())
+  email                String?                @unique
+  phone                String?                @unique
+  passwordHash         String?
+  displayName          String
+  active               Boolean                @default(true)
+  memberships          SchoolMembership[]
+  refreshTokens        RefreshToken[]
+  otpChallenges        OtpChallenge[]
+  auditLogs            AuditLog[]             @relation("AuditActor")
+  customerProfile      CustomerProfile?
+  staffProfile         StaffProfile?
+  kilometreAdjustments KilometreLedgerEntry[] @relation("KmAdjustmentActor")
+  deadlineExtensions   DeadlineExtension[]    @relation("DeadlineExtensionActor")
+  recordedPayments     Payment[]              @relation("PaymentRecorder")
+  createdRefunds       PaymentRefund[]        @relation("RefundCreator")
+  complaints           Complaint[]            @relation("ComplaintCustomer")
+  complaintMessages    ComplaintMessage[]     @relation("ComplaintMessageAuthor")
+  createdAt            DateTime               @default(now())
+  updatedAt            DateTime               @updatedAt
+}
+
+model Role {
+  id          String             @id @default(cuid())
+  key         String             @unique
+  name        String
+  memberships SchoolMembership[]
+  permissions RolePermission[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model Permission {
+  id          String           @id @default(cuid())
+  key         String           @unique
+  description String
+  roles       RolePermission[]
+  createdAt   DateTime         @default(now())
+}
+
+model RolePermission {
+  roleId       String
+  permissionId String
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+}
+
+model SchoolMembership {
+  id            String         @id @default(cuid())
+  userId        String
+  schoolId      String?
+  roleId        String
+  active        Boolean        @default(true)
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school        DrivingSchool? @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  role          Role           @relation(fields: [roleId], references: [id])
+  refreshTokens RefreshToken[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@unique([userId, schoolId, roleId])
+  @@index([schoolId, active])
+}
+
+model RefreshToken {
+  id              String           @id @default(cuid())
+  userId          String
+  membershipId    String
+  familyId        String
+  tokenHash       String           @unique
+  expiresAt       DateTime
+  revokedAt       DateTime?
+  replacedById    String?
+  reuseDetectedAt DateTime?
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  membership      SchoolMembership @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  createdAt       DateTime         @default(now())
+
+  @@index([userId, expiresAt])
+  @@index([familyId])
+}
+
+model OtpChallenge {
+  id          String    @id @default(cuid())
+  userId      String?
+  phone       String
+  codeHash    String
+  expiresAt   DateTime
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  consumedAt  DateTime?
+  user        User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+
+  @@index([phone, createdAt])
+}
+
+model AuditLog {
+  id          String         @id @default(cuid())
+  schoolId    String?
+  actorUserId String?
+  action      String
+  entityType  String
+  entityId    String?
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  school      DrivingSchool? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+  actor       User?          @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+  createdAt   DateTime       @default(now())
+
+  @@index([schoolId, createdAt])
+  @@index([actorUserId, createdAt])
+}
+
+enum TransmissionType {
+  MANUAL
+  AUTOMATIC
+}
+
+enum CustomerStatus {
+  REGISTERED
+  INACTIVE
+}
+
+enum EnrollmentStatus {
+  NOT_STARTED
+  ACTIVE
+  COMPLETED
+  EXPIRED
+  CANCELLED
+}
+
+enum StaffStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum VehicleStatus {
+  AVAILABLE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum VehicleIssueStatus {
+  OPEN
+  RESOLVED
+}
+
+enum VehicleIssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum LessonStatus {
+  ACTIVE
+  COMPLETED
+  COMPLETED_WITH_SHORTFALL
+}
+
+enum KilometreEntryType {
+  SHORTFALL
+  RECOVERY
+  ADJUSTMENT
+}
+
+enum PaymentMethod {
+  OPENING_BALANCE
+  CASH
+  UPI
+  RAZORPAY
+}
+
+enum PaymentStatus {
+  PENDING
+  VERIFIED
+  FAILED
+  PARTIALLY_REFUNDED
+  REFUNDED
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+model Course {
+  id               String             @id @default(cuid())
+  schoolId         String
+  code             String
+  name             String
+  transmission     TransmissionType
+  price            Decimal            @db.Decimal(10, 2)
+  classCount       Int                @default(28)
+  targetKmPerClass Decimal            @default(6) @db.Decimal(6, 2)
+  durationDays     Int                @default(60)
+  active           Boolean            @default(true)
+  school           DrivingSchool      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollments      CourseEnrollment[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([schoolId, code])
+  @@index([schoolId, active])
+}
+
+model CustomerProfile {
+  id           String             @id @default(cuid())
+  userId       String             @unique
+  schoolId     String
+  customerCode String
+  status       CustomerStatus     @default(REGISTERED)
+  dateOfBirth  DateTime?          @db.Date
+  address      String?
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school       DrivingSchool      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollments  CourseEnrollment[]
+  lessons      Lesson[]
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+
+  @@unique([schoolId, customerCode])
+  @@index([schoolId, status])
+}
+
+model CourseEnrollment {
+  id                       String                 @id @default(cuid())
+  customerId               String
+  courseId                 String
+  status                   EnrollmentStatus       @default(NOT_STARTED)
+  courseNameSnapshot       String
+  priceSnapshot            Decimal                @db.Decimal(10, 2)
+  classCountSnapshot       Int
+  targetKmPerClassSnapshot Decimal                @db.Decimal(6, 2)
+  durationDaysSnapshot     Int
+  discountAmount           Decimal                @default(0) @db.Decimal(10, 2)
+  totalPayable             Decimal                @db.Decimal(10, 2)
+  initialPaid              Decimal                @default(0) @db.Decimal(10, 2)
+  firstLessonAt            DateTime?
+  deadlineAt               DateTime?
+  customer                 CustomerProfile        @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  course                   Course                 @relation(fields: [courseId], references: [id], onDelete: Restrict)
+  lessons                  Lesson[]
+  kilometreEntries         KilometreLedgerEntry[]
+  deadlineExtensions       DeadlineExtension[]
+  payments                 Payment[]
+  complaints               Complaint[]
+  createdAt                DateTime               @default(now())
+  updatedAt                DateTime               @updatedAt
+
+  @@index([customerId, status])
+  @@index([courseId])
+}
+
+model Payment {
+  id                String           @id @default(cuid())
+  schoolId          String
+  enrollmentId      String
+  amount            Decimal          @db.Decimal(10, 2)
+  refundedAmount    Decimal          @default(0) @db.Decimal(10, 2)
+  method            PaymentMethod
+  status            PaymentStatus
+  receiptNumber     String
+  reference         String?
+  note              String?
+  providerOrderId   String?          @unique
+  providerPaymentId String?          @unique
+  recordedByUserId  String?
+  verifiedAt        DateTime?
+  school            DrivingSchool    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollment        CourseEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+  recordedBy        User?            @relation("PaymentRecorder", fields: [recordedByUserId], references: [id], onDelete: SetNull)
+  refunds           PaymentRefund[]
+  complaints        Complaint[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@unique([schoolId, receiptNumber])
+  @@index([enrollmentId, status, createdAt])
+}
+
+model PaymentRefund {
+  id               String       @id @default(cuid())
+  paymentId        String
+  amount           Decimal      @db.Decimal(10, 2)
+  status           RefundStatus
+  reason           String
+  providerRefundId String?      @unique
+  createdByUserId  String
+  payment          Payment      @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  createdBy        User         @relation("RefundCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  processedAt      DateTime?
+  createdAt        DateTime     @default(now())
+
+  @@index([paymentId, status])
+}
+
+model PaymentWebhookEvent {
+  id              String         @id @default(cuid())
+  schoolId        String?
+  providerEventId String         @unique
+  eventType       String
+  payload         Json
+  processedAt     DateTime       @default(now())
+  school          DrivingSchool? @relation(fields: [schoolId], references: [id], onDelete: SetNull)
+
+  @@index([processedAt])
+}
+
+model StaffProfile {
+  id                 String                    @id @default(cuid())
+  userId             String                    @unique
+  schoolId           String
+  staffCode          String
+  status             StaffStatus               @default(ACTIVE)
+  licenceNumber      String
+  licenceExpiresAt   DateTime                  @db.Date
+  canDriveManual     Boolean                   @default(true)
+  canDriveAutomatic  Boolean                   @default(false)
+  user               User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  school             DrivingSchool             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  vehicleAssignments DriverVehicleAssignment[]
+  vehicleIssues      VehicleIssue[]
+  lessons            Lesson[]
+  complaints         Complaint[]
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@unique([schoolId, staffCode])
+  @@unique([schoolId, licenceNumber])
+  @@index([schoolId, status])
+}
+
+model Vehicle {
+  id                 String                    @id @default(cuid())
+  schoolId           String
+  registrationNumber String
+  make               String
+  model              String
+  transmission       TransmissionType
+  status             VehicleStatus             @default(AVAILABLE)
+  odometerKm         Decimal                   @default(0) @db.Decimal(10, 1)
+  insuranceExpiresAt DateTime?                 @db.Date
+  pucExpiresAt       DateTime?                 @db.Date
+  school             DrivingSchool             @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  driverAssignments  DriverVehicleAssignment[]
+  issues             VehicleIssue[]
+  lessons            Lesson[]
+  complaints         Complaint[]
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+
+  @@unique([schoolId, registrationNumber])
+  @@index([schoolId, status])
+}
+
+model DriverVehicleAssignment {
+  id         String       @id @default(cuid())
+  staffId    String
+  vehicleId  String
+  assignedAt DateTime     @default(now())
+  endedAt    DateTime?
+  staff      StaffProfile @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  vehicle    Vehicle      @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([staffId, endedAt])
+  @@index([vehicleId, endedAt])
+}
+
+model VehicleIssue {
+  id                String               @id @default(cuid())
+  vehicleId         String
+  reportedByStaffId String?
+  severity          VehicleIssueSeverity
+  description       String
+  status            VehicleIssueStatus   @default(OPEN)
+  resolvedAt        DateTime?
+  vehicle           Vehicle              @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  reportedByStaff   StaffProfile?        @relation(fields: [reportedByStaffId], references: [id], onDelete: SetNull)
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  @@index([vehicleId, status])
+  @@index([reportedByStaffId, createdAt])
+}
+
+model Lesson {
+  id               String                 @id @default(cuid())
+  schoolId         String
+  customerId       String
+  enrollmentId     String
+  staffId          String
+  vehicleId        String
+  classNumber      Int
+  status           LessonStatus           @default(ACTIVE)
+  normalTargetKm   Decimal                @db.Decimal(6, 2)
+  pendingKmBefore  Decimal                @default(0) @db.Decimal(6, 2)
+  totalTargetKm    Decimal                @db.Decimal(6, 2)
+  startOdometerKm  Decimal                @db.Decimal(10, 1)
+  endOdometerKm    Decimal?               @db.Decimal(10, 1)
+  coveredKm        Decimal?               @db.Decimal(6, 2)
+  shortfallKm      Decimal?               @db.Decimal(6, 2)
+  startEvidenceUrl String?
+  endEvidenceUrl   String?
+  customerSummary  String?
+  privateNote      String?
+  startedAt        DateTime               @default(now())
+  endedAt          DateTime?
+  school           DrivingSchool          @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  customer         CustomerProfile        @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  enrollment       CourseEnrollment       @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+  staff            StaffProfile           @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  vehicle          Vehicle                @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  skills           LessonSkill[]
+  shortfallEntries KilometreLedgerEntry[] @relation("ShortfallLesson")
+  recoveryEntries  KilometreLedgerEntry[] @relation("RecoveryLesson")
+  complaints       Complaint[]
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@unique([enrollmentId, classNumber])
+  @@index([schoolId, startedAt])
+  @@index([customerId, status])
+  @@index([staffId, status])
+  @@index([vehicleId, status])
+}
+
+model KilometreLedgerEntry {
+  id                String             @id @default(cuid())
+  schoolId          String
+  enrollmentId      String
+  type              KilometreEntryType
+  amountKm          Decimal            @db.Decimal(6, 2)
+  shortfallLessonId String?
+  recoveryLessonId  String?
+  adjustmentKm      Decimal?           @db.Decimal(6, 2)
+  reason            String?
+  createdByUserId   String?
+  school            DrivingSchool      @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollment        CourseEnrollment   @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+  shortfallLesson   Lesson?            @relation("ShortfallLesson", fields: [shortfallLessonId], references: [id], onDelete: Restrict)
+  recoveryLesson    Lesson?            @relation("RecoveryLesson", fields: [recoveryLessonId], references: [id], onDelete: Restrict)
+  createdBy         User?              @relation("KmAdjustmentActor", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  createdAt         DateTime           @default(now())
+
+  @@index([enrollmentId, createdAt])
+  @@index([shortfallLessonId, type])
+  @@index([recoveryLessonId])
+}
+
+model DeadlineExtension {
+  id               String           @id @default(cuid())
+  schoolId         String
+  enrollmentId     String
+  previousDeadline DateTime
+  newDeadline      DateTime
+  reason           String
+  createdByUserId  String
+  school           DrivingSchool    @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollment       CourseEnrollment @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+  createdBy        User             @relation("DeadlineExtensionActor", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt        DateTime         @default(now())
+
+  @@index([enrollmentId, createdAt])
+}
+
+model LessonSkill {
+  id        String   @id @default(cuid())
+  lessonId  String
+  name      String
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([lessonId, name])
+}
+
+enum ComplaintStatus {
+  SUBMITTED
+  IN_REVIEW
+  WAITING_CUSTOMER
+  RESOLVED
+  CLOSED
+}
+
+enum ComplaintPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum ComplaintMessageVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+model Complaint {
+  id                String                @id @default(cuid())
+  schoolId          String
+  enrollmentId      String
+  customerUserId    String
+  subject           String
+  description       String
+  status            ComplaintStatus       @default(SUBMITTED)
+  priority          ComplaintPriority     @default(NORMAL)
+  lessonId          String?
+  staffId           String?
+  vehicleId         String?
+  paymentId         String?
+  resolutionOutcome String?
+  resolvedAt        DateTime?
+  school            DrivingSchool         @relation(fields: [schoolId], references: [id], onDelete: Cascade)
+  enrollment        CourseEnrollment      @relation(fields: [enrollmentId], references: [id], onDelete: Restrict)
+  customer          User                  @relation("ComplaintCustomer", fields: [customerUserId], references: [id], onDelete: Restrict)
+  lesson            Lesson?               @relation(fields: [lessonId], references: [id], onDelete: Restrict)
+  staff             StaffProfile?         @relation(fields: [staffId], references: [id], onDelete: Restrict)
+  vehicle           Vehicle?              @relation(fields: [vehicleId], references: [id], onDelete: Restrict)
+  payment           Payment?              @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+  messages          ComplaintMessage[]
+  attachments       ComplaintAttachment[]
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([schoolId, status, createdAt])
+  @@index([customerUserId, createdAt])
+}
+
+model ComplaintMessage {
+  id           String                     @id @default(cuid())
+  complaintId  String
+  authorUserId String
+  body         String
+  visibility   ComplaintMessageVisibility @default(PUBLIC)
+  complaint    Complaint                  @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  author       User                       @relation("ComplaintMessageAuthor", fields: [authorUserId], references: [id], onDelete: Restrict)
+  createdAt    DateTime                   @default(now())
+
+  @@index([complaintId, createdAt])
+}
+
+model ComplaintAttachment {
+  id          String    @id @default(cuid())
+  complaintId String
+  url         String
+  publicId    String
+  fileName    String
+  mimeType    String
+  sizeBytes   Int
+  complaint   Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+
+  @@index([complaintId])
+}

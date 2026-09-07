@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:validate
+        env:
+          DATABASE_URL: postgresql://unused:unused@localhost:5432/unused
+      - run: npm run check
+
+  integration:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: driving_school_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d driving_school_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/driving_school_test?schema=public
+      API_INTEGRATION_URL: http://localhost:4400/api/v1
+      API_PORT: 4400
+      JWT_SECRET: integration-jwt-secret-at-least-thirty-two-characters
+      OTP_HMAC_SECRET: integration-otp-secret-at-least-thirty-two-characters
+      OTP_EXPOSE_IN_RESPONSE: true
+      NOTIFICATION_ENCRYPTION_KEY: integration-notification-key-at-least-thirty-two-characters
+      NOTIFICATION_DELIVERY_MODE: log
+      RAZORPAY_KEY_ID: rzp_test_integration
+      RAZORPAY_KEY_SECRET: integration-razorpay-key-secret
+      RAZORPAY_WEBHOOK_SECRET: integration-webhook-secret
+      RAZORPAY_SKIP_PAYMENT_FETCH: true
+      CLOUDINARY_CLOUD_NAME: integration
+      CLOUDINARY_API_KEY: integration
+      CLOUDINARY_API_SECRET: integration
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run db:migrate
+      - run: npm run build --workspace=@hyd/api
+      - run: npm run start --workspace=@hyd/api > api.log 2>&1 &
+      - run: for attempt in {1..30}; do curl --fail --silent http://localhost:4400/api/v1/health && exit 0; sleep 1; done; exit 1
+      - run: npm run test:integration --workspace=@hyd/api

@@ -1,0 +1,15 @@
+{
+  "name": "@hyd/database",
+  "version": "0.1.0",
+  "private": true,
+  "main": "generated/client/index.js",
+  "types": "generated/client/index.d.ts",
+  "scripts": {
+    "build": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:validate": "prisma validate",
+    "db:migrate": "prisma migrate dev"
+  },
+  "dependencies": { "@prisma/client": "^6.16.1" },
+  "devDependencies": { "prisma": "^6.16.1" }
+}
